@@ -48,12 +48,18 @@ module Temporal
         @shutting_down
       end
 
+      def query_task?(task)
+        !task&.query&.query_type.nil?
+      end
+
       def poll_loop
         while !shutting_down? do
           Temporal.logger.debug("Polling worklow task queue (#{namespace} / #{task_queue})")
 
           task = poll_for_task
-          process(task) if task&.workflow_type
+          # Queries aren't supported yet and they can trigger unexpected state in the code
+          # https://github.com/temporalio/temporal/issues/1310
+          process(task) if task&.workflow_type && !query_task?(task)
         end
       end
 
