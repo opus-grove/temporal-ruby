@@ -102,7 +102,7 @@ module Temporal
           dispatch(
             History::EventTarget.workflow,
             'started',
-            parse_payload(event.attributes.input),
+            parse_payloads(event.attributes.input),
             Metadata.generate(Metadata::WORKFLOW_TYPE, event.attributes)
           )
 
@@ -139,7 +139,7 @@ module Temporal
 
         when 'ACTIVITY_TASK_COMPLETED'
           state_machine.complete
-          dispatch(target, 'completed', parse_payload(event.attributes.result))
+          dispatch(target, 'completed', parse_payloads(event.attributes.result))
 
         when 'ACTIVITY_TASK_FAILED'
           state_machine.fail
@@ -194,10 +194,10 @@ module Temporal
 
         when 'MARKER_RECORDED'
           state_machine.complete
-          handle_marker(event.id, event.attributes.marker_name, parse_payload(event.attributes.details['data']))
+          handle_marker(event.id, event.attributes.marker_name, parse_payloads(event.attributes.details))
 
         when 'WORKFLOW_EXECUTION_SIGNALED'
-          dispatch(target, 'signaled', event.attributes.signal_name, parse_payload(event.attributes.input))
+          dispatch(target, 'signaled', event.attributes.signal_name, parse_payloads(event.attributes.input))
 
         when 'WORKFLOW_EXECUTION_TERMINATED'
           # todo
@@ -211,26 +211,26 @@ module Temporal
 
         when 'START_CHILD_WORKFLOW_EXECUTION_FAILED'
           state_machine.fail
-          dispatch(target, 'failed', 'StandardError', parse_payload(event.attributes.cause))
+          dispatch(target, 'failed', 'StandardError', parse_payloads(event.attributes.cause))
 
         when 'CHILD_WORKFLOW_EXECUTION_STARTED'
           state_machine.start
 
         when 'CHILD_WORKFLOW_EXECUTION_COMPLETED'
           state_machine.complete
-          dispatch(target, 'completed', parse_payload(event.attributes.result))
+          dispatch(target, 'completed', parse_payloads(event.attributes.result))
 
         when 'CHILD_WORKFLOW_EXECUTION_FAILED'
           state_machine.fail
-          dispatch(target, 'failed', parse_failure(event.attributes.failure))
+          dispatch(target, 'failed', parse_payloads(event.attributes.failure))
 
         when 'CHILD_WORKFLOW_EXECUTION_CANCELED'
           state_machine.cancel
-          dispatch(target, 'failed', parse_failure(event.attributes.failure))
+          dispatch(target, 'failed', parse_payloads(event.attributes.failure))
 
         when 'CHILD_WORKFLOW_EXECUTION_TIMED_OUT'
           state_machine.time_out
-          dispatch(target, 'failed', parse_failure(event.attributes.failure))
+          dispatch(target, 'failed', parse_payloads(event.attributes.failure))
 
         when 'CHILD_WORKFLOW_EXECUTION_TERMINATED'
           # todo
@@ -305,11 +305,8 @@ module Temporal
         end
       end
 
-      def parse_payload(payload)
-        return if payload.nil? || payload.payloads.empty?
-
-        binary = payload.payloads.first.data
-        JSON.deserialize(binary)
+      def parse_payloads(payloads)
+        Temporal.configuration.converter.from_payloads(payloads)
       end
 
       def parse_failure(failure, default_exception_class = StandardError)
@@ -317,7 +314,7 @@ module Temporal
         when :application_failure_info
           exception_class = safe_constantize(failure.application_failure_info.type)
           exception_class ||= default_exception_class
-          details = parse_payload(failure.application_failure_info.details)
+          details = parse_payloads(failure.application_failure_info.details)
           backtrace = failure.stack_trace.split("\n")
 
           exception_class.new(details).tap do |exception|
@@ -327,7 +324,7 @@ module Temporal
           TimeoutError.new("Timeout type: #{failure.timeout_failure_info.timeout_type.to_s}")
         when :canceled_failure_info
           # TODO: Distinguish between different entity cancellations
-          StandardError.new(parse_payload(failure.canceled_failure_info.details))
+          StandardError.new(parse_payloads(failure.canceled_failure_info.details))
         else
           StandardError.new(failure.message)
         end
